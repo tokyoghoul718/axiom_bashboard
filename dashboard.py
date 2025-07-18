@@ -135,19 +135,54 @@ def monitor_wallets_for_snipes():
     for wallet in config.get("COPY_WALLETS", []):
         logs.append(f"[{time.strftime('%H:%M:%S')}] 👀 Watching wallet {wallet} for snipes...")
 
+import random
+import time
+
 def run_bot():
+    """
+    Main bot loop for demo mode.
+    Creates random trades every few seconds while running.
+    """
     while bot_status["running"]:
-        # Monitor wallets
-        if config.get("COPY_WALLETS"):
-            monitor_wallets_for_snipes()
-        # Scan tokens
-        for token in config.get("TOKENS", []):
-            price = fake_price_for_token(token)
-            # Example trade log
-            logs.append(f"[{time.strftime('%H:%M:%S')}] 🔄 Scanned {token} price ${price}")
-            if len(logs) > 50:
-                logs.pop(0)
-        time.sleep(5)
+        # Pick a token from config or use demo name
+        token_list = config.get("TOKENS", [])
+        token = random.choice(token_list) if token_list else "DEMO"
+
+        # Randomly decide buy or sell
+        action = random.choice(["Buy", "Sell"])
+
+        # Random trade amount
+        usd_amount = round(random.uniform(50, 500), 2)
+
+        # Random P/L
+        pl_value = round(random.uniform(-5, 5), 2)
+        pl_str = f"{'+' if pl_value >= 0 else ''}{pl_value}%"
+
+        # Timestamp
+        trade_time = time.strftime("%H:%M:%S")
+
+        # Append to trades list
+        trade_entry = {
+            "time": f"{trade_time}",
+            "token": token,
+            "type": action,
+            "usd": usd_amount,
+            "pl": pl_str
+        }
+        trades.append(trade_entry)
+
+        # Keep trades list trimmed (optional)
+        if len(trades) > 50:
+            trades.pop(0)
+
+        # Log it
+        logs.append(f"[{trade_time}] ✅ Demo trade: {action} {token} for ${usd_amount} ({pl_str})")
+        if len(logs) > 50:
+            logs.pop(0)
+
+        # Wait a few seconds before next trade
+        time.sleep(random.uniform(3, 6))
+
 
 # -------------------------------
 # Routes
