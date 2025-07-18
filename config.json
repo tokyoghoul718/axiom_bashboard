@@ -1,0 +1,10 @@
+{
+  "RPC_URL": "https://mainnet.helius-rpc.com/?api-key=YOURKEY",
+  "DEMO_MODE": true,
+  "TAKE_PROFIT": 50,
+  "STOP_LOSS": 20,
+  "COPY_WALLETS": [],
+  "TOKENS": [
+    "So11111111111111111111111111111111111111112"
+  ]
+}

@@ -1,0 +1,39 @@
+<h3>Tracked Tokens</h3>
+<form method="POST" action="/update_tokens">
+  <label>Token Addresses (comma separated):</label>
+  <input type="text" name="token_addresses" value="{{ ','.join(cfg.TOKENS) }}" style="width:100%;">
+  <button type="submit">Save Tokens</button>
+</form>
+
+<h3>Live Token Data</h3>
+<table border="1" id="token-table">
+  <thead>
+    <tr>
+      <th>Name</th>
+      <th>Address</th>
+      <th>Price (USD)</th>
+      <th>24h Volume</th>
+    </tr>
+  </thead>
+  <tbody></tbody>
+</table>
+
+<script>
+async function refreshTokens() {
+  const res = await fetch('/tokens');
+  const data = await res.json();
+  const tbody = document.querySelector('#token-table tbody');
+  tbody.innerHTML = '';
+  data.forEach(t => {
+    const row = `<tr>
+      <td>${t.name}</td>
+      <td>${t.address}</td>
+      <td>${t.price}</td>
+      <td>${t.volume}</td>
+    </tr>`;
+    tbody.innerHTML += row;
+  });
+}
+setInterval(refreshTokens, 5000); // refresh every 5s
+refreshTokens();
+</script>
