@@ -103,11 +103,33 @@ def fake_price_for_token(token):
     return round(base + spike, 4)
 
 def passes_rug_check(token):
-    if filters["marketcap"] > 0:
-        pass
-    if filters["liquidity"] > 0:
-        pass
+    """
+    Demo rug check: randomly fail tokens that don't meet filters.
+    Later, replace with real API data.
+    """
+    # Fake marketcap and liquidity values for demo
+    fake_marketcap = random.randint(0, 1_000_000)
+    fake_liquidity = random.randint(0, 500_000)
+
+    # Log what we’re checking
+    logs.append(f"[{time.strftime('%H:%M:%S')}] 🧪 Rug-check {token}: mc={fake_marketcap}, liq={fake_liquidity}")
+
+    # Apply filters
+    if fake_marketcap < filters["marketcap"]:
+        logs.append(f"[{time.strftime('%H:%M:%S')}] ❌ Rug-check fail: marketcap too low")
+        return False
+    if fake_liquidity < filters["liquidity"]:
+        logs.append(f"[{time.strftime('%H:%M:%S')}] ❌ Rug-check fail: liquidity too low")
+        return False
+
+    # Random small chance of failure for demo realism
+    if random.random() < 0.05:
+        logs.append(f"[{time.strftime('%H:%M:%S')}] ❌ Rug-check fail: random flag")
+        return False
+
+    logs.append(f"[{time.strftime('%H:%M:%S')}] ✅ Rug-check passed for {token}")
     return True
+
 
 def monitor_wallets_for_snipes():
     for wallet in config.get("COPY_WALLETS", []):
