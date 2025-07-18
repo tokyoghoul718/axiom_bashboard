@@ -1,11 +1,11 @@
-from flask import Flask, request, jsonify, render_template, redirect
-from flask_cors import CORS
 import json
 import os
 import threading
 import time
 import random
 import requests
+from flask import Flask, request, jsonify, render_template, redirect
+from flask_cors import CORS
 
 # -------------------------------
 # Flask app
@@ -13,25 +13,25 @@ import requests
 app = Flask(__name__, template_folder="templates")
 CORS(app)
 
-# -------------------------------
-# Config
-# -------------------------------
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
 
-
+# -------------------------------
+# Config helpers
+# -------------------------------
 def load_config():
     if os.path.exists(CONFIG_FILE):
         with open(CONFIG_FILE, "r") as f:
             return json.load(f)
     return {}
 
-
 def save_config():
     with open(CONFIG_FILE, "w") as f:
         json.dump(config, f, indent=2)
 
-
+# -------------------------------
+# Load initial config
+# -------------------------------
 config = load_config()
 RPC_URL = config.get("RPC_URL")
 print("CONFIG FILE PATH:", CONFIG_FILE)
@@ -39,39 +39,16 @@ print("CONFIG CONTENT LOADED:", config)
 print("RPC_URL LOADED:", RPC_URL)
 
 # -------------------------------
-# Global state
+# State
 # -------------------------------
-bot_status = {
-    "demo": config.get("DEMO_MODE", True),
-    "running": False
-}
-
-risk_settings = {
-    "take_profit": config.get("TAKE_PROFIT", 50),
-    "stop_loss": config.get("STOP_LOSS", 20)
-}
-
-filters = {
-    "marketcap": 0,
-    "liquidity": 0
-}
-
-copy_wallets = config.get("COPY_WALLETS", [])
-tokens = config.get("TOKENS", [])
-
-# -------------------------------
-# Demo data
-# -------------------------------
-trades = [
-    {"time": "17s ago", "token": "BONKA", "type": "Buy", "usd": 124.58, "pl": "+3.1%"},
-    {"time": "34s ago", "token": "BONKA", "type": "Sell", "usd": 397.54, "pl": "-2.5%"}
-]
-
+bot_status = {"demo": config.get("DEMO_MODE", True), "running": False}
+risk_settings = {"take_profit": config.get("TAKE_PROFIT", 50), "stop_loss": config.get("STOP_LOSS", 20)}
+filters = {"marketcap": 0, "liquidity": 0}
+trades = []
 wallets = [
     {"address": "Wallet1...abc", "trades": 45, "profit": 230, "pl": "+10%"},
     {"address": "Wallet2...xyz", "trades": 32, "profit": -50, "pl": "-3%"}
 ]
-
 logs = [
     "[10:20:05] ✅ Bot started",
     "[10:22:10] 🎯 Sniper triggered",
@@ -80,7 +57,39 @@ logs = [
 ]
 
 # -------------------------------
-# RPC test
+# Rug check simulation
+# -------------------------------
+def passes_rug_check(token: str) -> bool:
+    """
+    Simulated rug check for demo:
+    - Checks fake largest holder percentage
+    - Randomly fails sometimes
+    """
+    largest_holder_percent = random.randint(1, 100)
+    logs.append(f"[{time.strftime('%H:%M:%S')}] 🧪 Holder check {token}: top holder = {largest_holder_percent}%")
+    if len(logs) > 50:
+        logs.pop(0)
+
+    if largest_holder_percent > 50:
+        logs.append(f"[{time.strftime('%H:%M:%S')}] 🚨 Rug check failed: top holder owns too much")
+        if len(logs) > 50:
+            logs.pop(0)
+        return False
+
+    # Random fail 10% chance
+    if random.random() < 0.1:
+        logs.append(f"[{time.strftime('%H:%M:%S')}] 🚨 Rug check failed: random flag")
+        if len(logs) > 50:
+            logs.pop(0)
+        return False
+
+    logs.append(f"[{time.strftime('%H:%M:%S')}] ✅ Rug check passed for {token}")
+    if len(logs) > 50:
+        logs.pop(0)
+    return True
+
+# -------------------------------
+# RPC helper
 # -------------------------------
 def get_current_slot():
     if not RPC_URL:
@@ -93,75 +102,24 @@ def get_current_slot():
         return {"error": str(e)}
 
 # -------------------------------
-# Bot logic
+# Bot loop
 # -------------------------------
-active_positions = {}
-
-def fake_price_for_token(token):
-    base = random.uniform(0.5, 1.5)
-    spike = random.uniform(-0.05, 0.05)
-    return round(base + spike, 4)
-
-def passes_rug_check(token):
-    """
-    Demo rug check: randomly fail tokens that don't meet filters.
-    Later, replace with real API data.
-    """
-    # Fake marketcap and liquidity values for demo
-    fake_marketcap = random.randint(0, 1_000_000)
-    fake_liquidity = random.randint(0, 500_000)
-
-    # Log what we’re checking
-    logs.append(f"[{time.strftime('%H:%M:%S')}] 🧪 Rug-check {token}: mc={fake_marketcap}, liq={fake_liquidity}")
-
-    # Apply filters
-    if fake_marketcap < filters["marketcap"]:
-        logs.append(f"[{time.strftime('%H:%M:%S')}] ❌ Rug-check fail: marketcap too low")
-        return False
-    if fake_liquidity < filters["liquidity"]:
-        logs.append(f"[{time.strftime('%H:%M:%S')}] ❌ Rug-check fail: liquidity too low")
-        return False
-
-    # Random small chance of failure for demo realism
-    if random.random() < 0.05:
-        logs.append(f"[{time.strftime('%H:%M:%S')}] ❌ Rug-check fail: random flag")
-        return False
-
-    logs.append(f"[{time.strftime('%H:%M:%S')}] ✅ Rug-check passed for {token}")
-    return True
-
-
-def monitor_wallets_for_snipes():
-    for wallet in config.get("COPY_WALLETS", []):
-        logs.append(f"[{time.strftime('%H:%M:%S')}] 👀 Watching wallet {wallet} for snipes...")
-
-import random
-import time
-
 def run_bot():
-    """
-    Main bot loop for demo mode.
-    Creates random trades every few seconds while running.
-    """
     while bot_status["running"]:
-        # Pick a token from config or use demo name
         token_list = config.get("TOKENS", [])
         token = random.choice(token_list) if token_list else "DEMO"
 
-        # Randomly decide buy or sell
+        # ✅ Rug check before trade
+        if not passes_rug_check(token):
+            time.sleep(random.uniform(3, 6))
+            continue
+
         action = random.choice(["Buy", "Sell"])
-
-        # Random trade amount
         usd_amount = round(random.uniform(50, 500), 2)
-
-        # Random P/L
         pl_value = round(random.uniform(-5, 5), 2)
         pl_str = f"{'+' if pl_value >= 0 else ''}{pl_value}%"
-
-        # Timestamp
         trade_time = time.strftime("%H:%M:%S")
 
-        # Append to trades list
         trade_entry = {
             "time": f"{trade_time}",
             "token": token,
@@ -170,19 +128,14 @@ def run_bot():
             "pl": pl_str
         }
         trades.append(trade_entry)
-
-        # Keep trades list trimmed (optional)
         if len(trades) > 50:
             trades.pop(0)
 
-        # Log it
         logs.append(f"[{trade_time}] ✅ Demo trade: {action} {token} for ${usd_amount} ({pl_str})")
         if len(logs) > 50:
             logs.pop(0)
 
-        # Wait a few seconds before next trade
         time.sleep(random.uniform(3, 6))
-
 
 # -------------------------------
 # Routes
