@@ -11,14 +11,45 @@
       box-shadow:0 0 8px rgba(0,0,0,0.4);
     }
     h2 { margin-top:0; font-size:16px; }
+    label.switch {
+      display:inline-flex; align-items:center; margin-right:12px; font-size:14px; cursor:pointer;
+    }
+    input[type="checkbox"] {
+      appearance: none;
+      width: 40px;
+      height: 20px;
+      background: #555;
+      border-radius: 20px;
+      position: relative;
+      margin-right: 6px;
+      outline: none;
+      transition: background 0.3s;
+    }
+    input[type="checkbox"]:checked {
+      background: #28a745;
+    }
+    input[type="checkbox"]::before {
+      content: "";
+      position: absolute;
+      width: 16px;
+      height: 16px;
+      background: #fff;
+      border-radius: 50%;
+      top: 2px;
+      left: 2px;
+      transition: transform 0.3s;
+    }
+    input[type="checkbox"]:checked::before {
+      transform: translateX(20px);
+    }
+    input[type="text"], input[type="number"] {
+      padding:4px; margin:4px; border-radius:4px; border:none; font-size:13px;
+    }
     button {
       padding:6px 10px; margin:4px; border:none; border-radius:5px; cursor:pointer; font-size:13px;
       background:#444; color:#fff;
     }
     button:hover { background:#666; }
-    input {
-      padding:4px; margin:4px; border-radius:4px; border:none; font-size:13px;
-    }
     table { width:100%; border-collapse:collapse; margin-top:8px; font-size:13px; }
     th,td { border-bottom:1px solid #444; padding:6px; text-align:left; }
     .scrollable {
@@ -33,9 +64,15 @@
   <!-- DASHBOARD 1 -->
   <div class="dashboard">
     <h2>⚙️ Controls</h2>
-    <button onclick="toggleDemo()">Demo ON/OFF</button>
-    <button onclick="startBot()">Bot ON/OFF</button>
-    <button onclick="sniper()">🎯 Sniper Mode</button>
+    <label class="switch">
+      <input type="checkbox" id="demoSwitch" onchange="toggleDemoSwitch()"> Demo Mode
+    </label>
+    <label class="switch">
+      <input type="checkbox" id="botSwitch" onchange="toggleBotSwitch()"> Bot Running
+    </label>
+    <label class="switch">
+      <input type="checkbox" id="sniperSwitch" onchange="toggleSniperSwitch()"> Sniper Mode
+    </label>
     <h4>Wallet Tracking</h4>
     <input id="walletInput" placeholder="Paste wallet address">
     <button onclick="addWallet()">Add Wallet</button>
@@ -95,36 +132,40 @@
 async function toggleDemo(){ await fetch('/toggle_demo',{method:'POST'}); }
 async function startBot(){ await fetch('/start_bot',{method:'POST'}); }
 async function sniper(){ alert('Sniper mode triggered (demo)'); }
+
 function addWallet(){
-  const addr=document.getElementById('walletInput').value;
+  const addr = document.getElementById('walletInput').value;
   if(addr){
-    const li=document.createElement('li');
-    li.textContent=addr;
+    const li = document.createElement('li');
+    li.textContent = addr;
     document.getElementById('walletList').appendChild(li);
   }
 }
+
 async function saveRisk(){
-  const tp=document.getElementById('tpInput').value;
-  const sl=document.getElementById('slInput').value;
-  const amt=document.getElementById('amtInput').value;
+  const tp = document.getElementById('tpInput').value;
+  const sl = document.getElementById('slInput').value;
+  const amt = document.getElementById('amtInput').value;
   await fetch('/save_risk',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({take_profit:tp,stop_loss:sl,amount:amt})
   });
 }
+
 async function saveFilters(){
-  const mc=document.getElementById('mcInput').value;
-  const liq=document.getElementById('liqInput').value;
+  const mc = document.getElementById('mcInput').value;
+  const liq = document.getElementById('liqInput').value;
   await fetch('/save_filters',{
     method:'POST',
     headers:{'Content-Type':'application/json'},
     body:JSON.stringify({marketcap:mc,liquidity:liq})
   });
 }
+
 async function loadTrades(){
-  const res=await fetch('/get_trades'); const data=await res.json();
-  const t=document.getElementById('tradesTable'); t.innerHTML='';
+  const res = await fetch('/get_trades'); const data = await res.json();
+  const t = document.getElementById('tradesTable'); t.innerHTML='';
   data.forEach(tr=>{
     const r=document.createElement('tr');
     r.innerHTML=`<td>${tr.time}</td><td>${tr.type}</td><td>${tr.token}</td><td>$${tr.usd}</td><td>${tr.pl}</td>`;
@@ -132,8 +173,8 @@ async function loadTrades(){
   });
 }
 async function loadWallets(){
-  const res=await fetch('/get_wallets'); const data=await res.json();
-  const t=document.getElementById('walletTable'); t.innerHTML='';
+  const res = await fetch('/get_wallets'); const data = await res.json();
+  const t = document.getElementById('walletTable'); t.innerHTML='';
   data.forEach(w=>{
     const r=document.createElement('tr');
     r.innerHTML=`<td>${w.address}</td><td>${w.trades}</td><td>$${w.profit}</td><td>${w.pl}</td>`;
@@ -141,13 +182,31 @@ async function loadWallets(){
   });
 }
 async function loadLogs(){
-  const res=await fetch('/get_logs'); const data=await res.json();
-  const ul=document.getElementById('logList'); ul.innerHTML='';
+  const res = await fetch('/get_logs'); const data = await res.json();
+  const ul = document.getElementById('logList'); ul.innerHTML='';
   data.forEach(l=>{
-    const li=document.createElement('li'); li.textContent=l; ul.appendChild(li);
+    const li = document.createElement('li'); li.textContent = l; ul.appendChild(li);
   });
 }
 setInterval(()=>{ loadTrades(); loadWallets(); loadLogs(); },3000);
+
+// ✅ NEW: Switch-based toggle handlers
+async function toggleDemoSwitch(){
+  const checked = document.getElementById('demoSwitch').checked;
+  await fetch('/toggle_demo',{method:'POST'});
+  console.log("Demo toggled to:", checked);
+}
+
+async function toggleBotSwitch(){
+  const checked = document.getElementById('botSwitch').checked;
+  await fetch('/start_bot',{method:'POST'});
+  console.log("Bot toggled to:", checked);
+}
+
+async function toggleSniperSwitch(){
+  const checked = document.getElementById('sniperSwitch').checked;
+  alert('Sniper mode toggled to: ' + (checked ? 'ON' : 'OFF'));
+}
 </script>
 </body>
 </html>
