@@ -61,32 +61,49 @@ logs = [
 # -------------------------------
 def passes_rug_check(token: str) -> bool:
     """
-    Simulated rug check for demo:
-    - Checks fake largest holder percentage
-    - Randomly fails sometimes
+    Simulated rug check:
+    - Checks top holder %
+    - Checks fake marketcap vs dashboard filter
+    - Checks fake liquidity vs dashboard filter
     """
+
+    # Simulate random values
     largest_holder_percent = random.randint(1, 100)
+    fake_marketcap = random.randint(10000, 200000)   # in USD
+    fake_liquidity = random.randint(1000, 50000)     # in USD
+
+    # Log holder check
     logs.append(f"[{time.strftime('%H:%M:%S')}] 🧪 Holder check {token}: top holder = {largest_holder_percent}%")
-    if len(logs) > 50:
-        logs.pop(0)
+    if len(logs) > 50: logs.pop(0)
 
-    if largest_holder_percent > 50:
+    if largest_holder_percent > 40:  # tighten threshold
         logs.append(f"[{time.strftime('%H:%M:%S')}] 🚨 Rug check failed: top holder owns too much")
-        if len(logs) > 50:
-            logs.pop(0)
+        if len(logs) > 50: logs.pop(0)
         return False
 
-    # Random fail 10% chance
-    if random.random() < 0.1:
-        logs.append(f"[{time.strftime('%H:%M:%S')}] 🚨 Rug check failed: random flag")
-        if len(logs) > 50:
-            logs.pop(0)
+    # Log marketcap check
+    logs.append(f"[{time.strftime('%H:%M:%S')}] 🧪 Marketcap check {token}: mc = ${fake_marketcap}")
+    if len(logs) > 50: logs.pop(0)
+
+    if fake_marketcap < filters.get("marketcap", 0):
+        logs.append(f"[{time.strftime('%H:%M:%S')}] 🚨 Rug check failed: marketcap too low (min {filters.get('marketcap',0)})")
+        if len(logs) > 50: logs.pop(0)
         return False
 
+    # Log liquidity check
+    logs.append(f"[{time.strftime('%H:%M:%S')}] 🧪 Liquidity check {token}: liq = ${fake_liquidity}")
+    if len(logs) > 50: logs.pop(0)
+
+    if fake_liquidity < filters.get("liquidity", 0):
+        logs.append(f"[{time.strftime('%H:%M:%S')}] 🚨 Rug check failed: liquidity too low (min {filters.get('liquidity',0)})")
+        if len(logs) > 50: logs.pop(0)
+        return False
+
+    # If all pass
     logs.append(f"[{time.strftime('%H:%M:%S')}] ✅ Rug check passed for {token}")
-    if len(logs) > 50:
-        logs.pop(0)
+    if len(logs) > 50: logs.pop(0)
     return True
+
 
 # -------------------------------
 # RPC helper
