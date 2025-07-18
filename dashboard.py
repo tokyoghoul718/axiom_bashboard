@@ -42,7 +42,7 @@ print("RPC_URL LOADED:", RPC_URL)
 # State
 # -------------------------------
 bot_status = {"demo": config.get("DEMO_MODE", True), "running": False}
-sniper_status = {"enabled": False}  # NEW for Sniper Mode
+sniper_status = {"enabled": False}
 risk_settings = {"take_profit": config.get("TAKE_PROFIT", 50), "stop_loss": config.get("STOP_LOSS", 20)}
 filters = {"marketcap": 0, "liquidity": 0}
 trades = []
@@ -50,39 +50,60 @@ wallets = [
     {"address": "Wallet1...abc", "trades": 45, "profit": 230, "pl": "+10%"},
     {"address": "Wallet2...xyz", "trades": 32, "profit": -50, "pl": "-3%"}
 ]
-logs = [
-    "[10:20:05] ✅ Bot started",
-    "[10:22:10] 🎯 Sniper triggered",
-    "[10:24:30] ⚙️ Settings updated",
-    "[10:25:50] ✅ Trade executed"
-]
+logs = []
 
 # -------------------------------
-# Rug check with holder/mcap/liquidity
+# Dexscreener helper
+# -------------------------------
+def get_token_data(token_address):
+    try:
+        url = f"https://api.dexscreener.io/latest/dex/tokens/{token_address}"
+        r = requests.get(url, timeout=10)
+        data = r.json()
+        pools = data.get("pairs", [])
+        if not pools:
+            return None
+        pool = pools[0]
+        marketcap = pool.get("fdv", 0)
+        liquidity = pool.get("liquidity", {}).get("usd", 0)
+        return marketcap, liquidity
+    except Exception as e:
+        print("Dexscreener error:", e)
+        return None
+
+# -------------------------------
+# Rug check with live data
 # -------------------------------
 def passes_rug_check(token: str) -> bool:
-    largest_holder_percent = random.randint(1, 100)
-    fake_marketcap = random.randint(10000, 200000)
-    fake_liquidity = random.randint(1000, 50000)
+    stats = get_token_data(token)
+    if not stats:
+        logs.append(f"[{time.strftime('%H:%M:%S')}] ⚠️ Could not fetch data for {token}")
+        if len(logs) > 50: logs.pop(0)
+        return False
 
+    marketcap, liquidity = stats
+
+    # Log fetched data
+    logs.append(f"[{time.strftime('%H:%M:%S')}] 🧪 Marketcap {token}: ${marketcap}")
+    if len(logs) > 50: logs.pop(0)
+    logs.append(f"[{time.strftime('%H:%M:%S')}] 🧪 Liquidity {token}: ${liquidity}")
+    if len(logs) > 50: logs.pop(0)
+
+    if marketcap < filters.get("marketcap", 0):
+        logs.append(f"[{time.strftime('%H:%M:%S')}] 🚨 Rug check failed: marketcap too low")
+        if len(logs) > 50: logs.pop(0)
+        return False
+    if liquidity < filters.get("liquidity", 0):
+        logs.append(f"[{time.strftime('%H:%M:%S')}] 🚨 Rug check failed: liquidity too low")
+        if len(logs) > 50: logs.pop(0)
+        return False
+
+    # (Optional holder simulation still)
+    largest_holder_percent = random.randint(1, 100)
     logs.append(f"[{time.strftime('%H:%M:%S')}] 🧪 Holder check {token}: top holder = {largest_holder_percent}%")
     if len(logs) > 50: logs.pop(0)
     if largest_holder_percent > 40:
         logs.append(f"[{time.strftime('%H:%M:%S')}] 🚨 Rug check failed: top holder owns too much")
-        if len(logs) > 50: logs.pop(0)
-        return False
-
-    logs.append(f"[{time.strftime('%H:%M:%S')}] 🧪 Marketcap check {token}: mc = ${fake_marketcap}")
-    if len(logs) > 50: logs.pop(0)
-    if fake_marketcap < filters.get("marketcap", 0):
-        logs.append(f"[{time.strftime('%H:%M:%S')}] 🚨 Rug check failed: marketcap too low (min {filters.get('marketcap',0)})")
-        if len(logs) > 50: logs.pop(0)
-        return False
-
-    logs.append(f"[{time.strftime('%H:%M:%S')}] 🧪 Liquidity check {token}: liq = ${fake_liquidity}")
-    if len(logs) > 50: logs.pop(0)
-    if fake_liquidity < filters.get("liquidity", 0):
-        logs.append(f"[{time.strftime('%H:%M:%S')}] 🚨 Rug check failed: liquidity too low (min {filters.get('liquidity',0)})")
         if len(logs) > 50: logs.pop(0)
         return False
 
@@ -109,7 +130,10 @@ def get_current_slot():
 def run_bot():
     while bot_status["running"]:
         token_list = config.get("TOKENS", [])
-        token = random.choice(token_list) if token_list else "DEMO"
+        token = random.choice(token_list) if token_list else None
+        if not token:
+            time.sleep(3)
+            continue
 
         if not passes_rug_check(token):
             time.sleep(random.uniform(3, 6))
@@ -121,20 +145,11 @@ def run_bot():
         pl_str = f"{'+' if pl_value >= 0 else ''}{pl_value}%"
         trade_time = time.strftime("%H:%M:%S")
 
-        trade_entry = {
-            "time": f"{trade_time}",
-            "token": token,
-            "type": action,
-            "usd": usd_amount,
-            "pl": pl_str
-        }
-        trades.append(trade_entry)
-        if len(trades) > 50:
-            trades.pop(0)
+        trades.append({"time": trade_time, "token": token, "type": action, "usd": usd_amount, "pl": pl_str})
+        if len(trades) > 50: trades.pop(0)
 
         logs.append(f"[{trade_time}] ✅ Demo trade: {action} {token} for ${usd_amount} ({pl_str})")
-        if len(logs) > 50:
-            logs.pop(0)
+        if len(logs) > 50: logs.pop(0)
 
         time.sleep(random.uniform(3, 6))
 
@@ -144,7 +159,10 @@ def run_bot():
 def run_sniper():
     while sniper_status["enabled"]:
         token_list = config.get("TOKENS", [])
-        token = random.choice(token_list) if token_list else "NEWDEMO"
+        token = random.choice(token_list) if token_list else None
+        if not token:
+            time.sleep(3)
+            continue
 
         if not passes_rug_check(token):
             time.sleep(random.uniform(5, 8))
@@ -156,20 +174,11 @@ def run_sniper():
         pl_str = f"{'+' if pl_value >= 0 else ''}{pl_value}%"
         trade_time = time.strftime("%H:%M:%S")
 
-        trade_entry = {
-            "time": f"{trade_time}",
-            "token": token,
-            "type": action,
-            "usd": usd_amount,
-            "pl": pl_str
-        }
-        trades.append(trade_entry)
-        if len(trades) > 50:
-            trades.pop(0)
+        trades.append({"time": trade_time, "token": token, "type": action, "usd": usd_amount, "pl": pl_str})
+        if len(trades) > 50: trades.pop(0)
 
         logs.append(f"[{trade_time}] 🎯 [SNIPER] Auto-{action} {token} for ${usd_amount} ({pl_str})")
-        if len(logs) > 50:
-            logs.pop(0)
+        if len(logs) > 50: logs.pop(0)
 
         time.sleep(random.uniform(5, 10))
 
