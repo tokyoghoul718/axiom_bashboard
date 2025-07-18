@@ -1,83 +1,214 @@
+from flask import Flask, request, jsonify, render_template, redirect
+from flask_cors import CORS
+import json
+import os
+import threading
+import time
 import random
+import requests
 
-# Keep track of positions we "bought"
-active_positions = {}  # token -> {"entry_price": float}
+# -------------------------------
+# Flask app
+# -------------------------------
+app = Flask(__name__, template_folder="templates")
+CORS(app)
+
+# -------------------------------
+# Config
+# -------------------------------
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CONFIG_FILE = os.path.join(BASE_DIR, "config.json")
+
+
+def load_config():
+    if os.path.exists(CONFIG_FILE):
+        with open(CONFIG_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+
+def save_config():
+    with open(CONFIG_FILE, "w") as f:
+        json.dump(config, f, indent=2)
+
+
+config = load_config()
+RPC_URL = config.get("RPC_URL")
+print("CONFIG FILE PATH:", CONFIG_FILE)
+print("CONFIG CONTENT LOADED:", config)
+print("RPC_URL LOADED:", RPC_URL)
+
+# -------------------------------
+# Global state
+# -------------------------------
+bot_status = {
+    "demo": config.get("DEMO_MODE", True),
+    "running": False
+}
+
+risk_settings = {
+    "take_profit": config.get("TAKE_PROFIT", 50),
+    "stop_loss": config.get("STOP_LOSS", 20)
+}
+
+filters = {
+    "marketcap": 0,
+    "liquidity": 0
+}
+
+copy_wallets = config.get("COPY_WALLETS", [])
+tokens = config.get("TOKENS", [])
+
+# -------------------------------
+# Demo data
+# -------------------------------
+trades = [
+    {"time": "17s ago", "token": "BONKA", "type": "Buy", "usd": 124.58, "pl": "+3.1%"},
+    {"time": "34s ago", "token": "BONKA", "type": "Sell", "usd": 397.54, "pl": "-2.5%"}
+]
+
+wallets = [
+    {"address": "Wallet1...abc", "trades": 45, "profit": 230, "pl": "+10%"},
+    {"address": "Wallet2...xyz", "trades": 32, "profit": -50, "pl": "-3%"}
+]
+
+logs = [
+    "[10:20:05] ✅ Bot started",
+    "[10:22:10] 🎯 Sniper triggered",
+    "[10:24:30] ⚙️ Settings updated",
+    "[10:25:50] ✅ Trade executed"
+]
+
+# -------------------------------
+# RPC test
+# -------------------------------
+def get_current_slot():
+    if not RPC_URL:
+        return {"error": "No RPC_URL set in config.json"}
+    try:
+        payload = {"jsonrpc": "2.0", "id": 1, "method": "getSlot"}
+        r = requests.post(RPC_URL, json=payload, timeout=10)
+        return r.json()
+    except Exception as e:
+        return {"error": str(e)}
+
+# -------------------------------
+# Bot logic
+# -------------------------------
+active_positions = {}
 
 def fake_price_for_token(token):
-    """
-    Demo price generator. Replace with a real price API later.
-    """
-    # Use token name to seed for stability
     base = random.uniform(0.5, 1.5)
-    # Simulate some volatility
     spike = random.uniform(-0.05, 0.05)
     return round(base + spike, 4)
 
 def passes_rug_check(token):
-    """
-    Basic rug check demo. You can expand with real logic later.
-    """
-    # Use filters from config
     if filters["marketcap"] > 0:
-        # Placeholder: always pass for now
         pass
     if filters["liquidity"] > 0:
-        # Placeholder: always pass for now
         pass
-    # In demo mode, always safe
     return True
 
 def monitor_wallets_for_snipes():
-    """
-    Placeholder for future wallet copy-trading.
-    When you add wallet addresses in config["COPY_WALLETS"],
-    this is where you'd fetch their trades from an API and react.
-    """
     for wallet in config.get("COPY_WALLETS", []):
-        # Demo log for now
         logs.append(f"[{time.strftime('%H:%M:%S')}] 👀 Watching wallet {wallet} for snipes...")
 
 def run_bot():
-    """
-    Main bot loop. Scans tokens, applies TP/SL, rug-check, and logs signals.
-    """
     while bot_status["running"]:
-        try:
-            # Step 1: Monitor wallets for sniping (future)
-            if config.get("COPY_WALLETS"):
-                monitor_wallets_for_snipes()
+        # Monitor wallets
+        if config.get("COPY_WALLETS"):
+            monitor_wallets_for_snipes()
+        # Scan tokens
+        for token in config.get("TOKENS", []):
+            price = fake_price_for_token(token)
+            # Example trade log
+            logs.append(f"[{time.strftime('%H:%M:%S')}] 🔄 Scanned {token} price ${price}")
+            if len(logs) > 50:
+                logs.pop(0)
+        time.sleep(5)
 
-            # Step 2: Scan tokens
-            for token in config.get("TOKENS", []):
-                price = fake_price_for_token(token)
+# -------------------------------
+# Routes
+# -------------------------------
+@app.route("/")
+def home():
+    return render_template("index.html", cfg=config)
 
-                # If not in active_positions, consider buying
-                if token not in active_positions:
-                    # Example entry rule: random chance of spike
-                    if random.random() < 0.1:  # 10% chance per loop
-                        if passes_rug_check(token):
-                            active_positions[token] = {"entry_price": price}
-                            logs.append(f"[{time.strftime('%H:%M:%S')}] 🚀 BUY signal for {token} at ${price}")
-                        else:
-                            logs.append(f"[{time.strftime('%H:%M:%S')}] ❌ Rug-check failed for {token}")
-                else:
-                    # Already holding, check TP/SL
-                    entry = active_positions[token]["entry_price"]
-                    change_pct = ((price - entry) / entry) * 100
+@app.route("/toggle_demo", methods=["POST"])
+def toggle_demo():
+    bot_status["demo"] = not bot_status["demo"]
+    config["DEMO_MODE"] = bot_status["demo"]
+    save_config()
+    return jsonify(bot_status)
 
-                    if change_pct >= risk_settings["take_profit"]:
-                        logs.append(f"[{time.strftime('%H:%M:%S')}] ✅ TAKE PROFIT on {token}: +{round(change_pct,2)}%")
-                        del active_positions[token]
-                    elif change_pct <= -risk_settings["stop_loss"]:
-                        logs.append(f"[{time.strftime('%H:%M:%S')}] 🔻 STOP LOSS on {token}: {round(change_pct,2)}%")
-                        del active_positions[token]
+@app.route("/start_bot", methods=["POST"])
+def start_bot():
+    bot_status["running"] = not bot_status["running"]
+    if bot_status["running"]:
+        threading.Thread(target=run_bot, daemon=True).start()
+        logs.append(f"[{time.strftime('%H:%M:%S')}] ✅ Bot started")
+    else:
+        logs.append(f"[{time.strftime('%H:%M:%S')}] ⏹️ Bot stopped")
+    return jsonify(bot_status)
 
-            # Keep logs trimmed
-            if len(logs) > 100:
-                del logs[0]
+@app.route("/save_risk", methods=["POST"])
+def save_risk():
+    data = request.json
+    risk_settings["take_profit"] = int(data.get("take_profit", risk_settings["take_profit"]))
+    risk_settings["stop_loss"] = int(data.get("stop_loss", risk_settings["stop_loss"]))
+    config["TAKE_PROFIT"] = risk_settings["take_profit"]
+    config["STOP_LOSS"] = risk_settings["stop_loss"]
+    save_config()
+    logs.append(f"[{time.strftime('%H:%M:%S')}] ⚙️ Risk settings updated")
+    return jsonify({"message": "Risk settings saved!", "risk": risk_settings})
 
-            time.sleep(5)
+@app.route("/save_filters", methods=["POST"])
+def save_filters():
+    data = request.json
+    filters["marketcap"] = int(data.get("marketcap", filters["marketcap"]))
+    filters["liquidity"] = int(data.get("liquidity", filters["liquidity"]))
+    logs.append(f"[{time.strftime('%H:%M:%S')}] ⚙️ Filters updated")
+    return jsonify({"message": "Filters saved!", "filters": filters})
 
-        except Exception as e:
-            logs.append(f"[{time.strftime('%H:%M:%S')}] ⚠️ Bot error: {e}")
-            time.sleep(5)
+@app.route("/get_trades", methods=["GET"])
+def get_trades():
+    return jsonify(trades)
+
+@app.route("/get_wallets", methods=["GET"])
+def get_wallets():
+    return jsonify(wallets)
+
+@app.route("/get_logs", methods=["GET"])
+def get_logs():
+    return jsonify(logs)
+
+@app.route("/update_tokens", methods=["POST"])
+def update_tokens():
+    token_str = request.form.get("token_addresses", "")
+    token_list = [t.strip() for t in token_str.split(",") if t.strip()]
+    config["TOKENS"] = token_list
+    save_config()
+    logs.append(f"[{time.strftime('%H:%M:%S')}] ✅ Tokens updated")
+    return redirect("/")
+
+@app.route("/tokens", methods=["GET"])
+def tokens_route():
+    result = []
+    for t in config.get("TOKENS", []):
+        result.append({
+            "name": "DemoToken",
+            "address": t,
+            "price": round(1.23, 4),
+            "volume": 12345
+        })
+    return jsonify(result)
+
+@app.route("/test_rpc", methods=["GET"])
+def test_rpc():
+    return jsonify(get_current_slot())
+
+# -------------------------------
+# Run
+# -------------------------------
+if __name__ == "__main__":
+    app.run(debug=True, port=5001)
